@@ -1,130 +1,25 @@
 import asyncio
 import json
-import pandas as pd
+import re
 
+import pandas as pd
 from crawl4ai import AsyncWebCrawler, CacheMode, CrawlerRunConfig
 from crawl4ai.async_configs import CrawlerRunConfig
 from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
 
-COMMUNITY_RANGE = [
-    '0-100',
-    '101-1000',
-    '1001-10000',
-    '10001-50000',
-    '50001-100000',
-    '100001-1000000',
-    '1000001-100000000'
-]
+from consts import (BASE_DOMAIN, BASE_QUERY, COMMUNITY_RANGE, basepage_schema)
 
-BASE_QUERY = 'https://reddstats.com/ranking/relative?over18=False&period=monthly&subscriber_classification='
-BASE_DOMAIN = 'https://reddstats.com'
 
-basepage_schema = {
-    "name": "Item Extraction",
-    "baseSelector": "div.item",
-    "fields": [
-        {
-            "name": "link",
-            "selector": "a",
-            "type": "attribute",
-            "attribute": "href"
-        },
-        {
-            "name": "link_name",
-            "selector": "a",
-            "type": "text"
-        },
-        {
-            "name": "short_description",
-            "selector": "p.text-xs.font-thin.text-gray-500",
-            "type": "text"
-        },
-        {
-            "name": "percentage",
-            "selector": "div.p-2.pl-3.text-xs.md\\:text-sm.text-gray-700.font-semibold.col-span-3.sm\\:col-span-2",
-            "type": "text"
-        },
-        {
-            "name": "page_content",
-            "selector": "",
-            "type": "text"
-        }
-    ]
-}
-
-page_schema = {
-    "name": "Page Component Extraction",
-    "baseSelector": "div.bg-gray-100.border.border-gray-200.shadow-lg.rounded-2xl",
-    "fields": [
-        {
-            "name": "subredditName",
-            "selector": "div.w-full.flex-none.text-xl.text-gray-600.font-bold.leading-none",
-            "type": "text"
-        },
-        {
-            "name": "subscribers",
-            "selector": "div.text-lg.lg\\:text-2xl.text-gray-500.font-semibold.leading-8.mt-5",
-            "type": "text",
-            "index": 0
-        },
-        {
-            "name": "createdDate",
-            "selector": "div.text-lg.lg\\:text-2xl.text-gray-500.font-semibold.leading-8.mt-5",
-            "type": "text",
-            "index": 1
-        },
-        {
-            "name": "ranking",
-            "selector": "div.text-lg.lg\\:text-2xl.text-gray-500.font-semibold.leading-8.mt-5",
-            "type": "text",
-            "index": 2
-        },
-        {
-            "name": "subredditLink",
-            "selector": "a[href*='reddit.com/r/']",
-            "type": "attribute",
-            "attrName": "href"
-        },
-        {
-            "name": "growthDay",
-            "selector": "div.h-64:nth-of-type(1) p:nth-of-type(1)",
-            "type": "text"
-        },
-        {
-            "name": "growthWeek",
-            "selector": "div.h-64:nth-of-type(1) p:nth-of-type(2)",
-            "type": "text"
-        },
-        {
-            "name": "growthMonth",
-            "selector": "div.h-64:nth-of-type(1) p:nth-of-type(3)",
-            "type": "text"
-        },
-        {
-            "name": "growthAbsoluteDay",
-            "selector": "div.h-64:nth-of-type(2) p:nth-of-type(1)",
-            "type": "text"
-        },
-        {
-            "name": "growthAbsoluteWeek",
-            "selector": "div.h-64:nth-of-type(2) p:nth-of-type(2)",
-            "type": "text"
-        },
-        {
-            "name": "growthAbsoluteMonth",
-            "selector": "div.h-64:nth-of-type(2) p:nth-of-type(3)",
-            "type": "text"
-        }
-    ]
-}
-
-async def extract_data():
-    # 1) Crawl the main ranking page (single arun)
+async def get_pages_from_url(url:str):
+     # 1) Crawl the main ranking page (single arun)
     async with AsyncWebCrawler() as crawler:
         # First crawl to get the list of items
         base_result = await crawler.arun(
-            url=BASE_QUERY + COMMUNITY_RANGE[0],
+            url=url,
             config=CrawlerRunConfig(
+                magic=True,
+                simulate_user=True,
+                override_navigator=True,
                 cache_mode=CacheMode.BYPASS,
                 extraction_strategy=JsonCssExtractionStrategy(basepage_schema)
             )
@@ -133,20 +28,93 @@ async def extract_data():
         if not base_result.success:
             print(f"Failed to crawl base page: {base_result.error_message}")
             return
+        try:
 
-        # Parse the base page items into a Python list
-        data = json.loads(base_result.extracted_content)
+            # Parse the base page items into a Python list
+            data = json.loads(base_result.extracted_content)
+        except Exception as e:
+            print(f"Error while parsing data to json: {e}")
 
         # Build the full URLs for each item
-        links = [f"{BASE_DOMAIN}/{item['link'].lstrip('/')}" for item in data]
+        links = ['/'.join([BASE_DOMAIN, item['link']]) for item in data]
+    return data, links
 
+
+def parse_markdown(markdown_text):
+    extracted_data = {}
+    
+    # Subscribers
+    subscribers_match = re.search(r"Subscribers\s*\n\s*(\d+)", markdown_text)
+    extracted_data["Subscribers"] = int(subscribers_match.group(1)) if subscribers_match else None
+
+    # Created
+    created_match = re.search(r"Created\s*\n\s*([^\n]+)", markdown_text)
+    extracted_data["Created"] = created_match.group(1).strip() if created_match else None
+
+    # Ranking
+    ranking_match = re.search(r"Ranking\s*\n\s*(\d+)", markdown_text)
+    extracted_data["Ranking"] = int(ranking_match.group(1)) if ranking_match else None
+
+    # %-Subscriber Growth per Period
+    # Match everything after "Day:" until newline, capturing the entire substring (which includes possible spaces, plus/minus signs, percentages, etc.)
+    # We do the same for "Week" and "Month".
+    growth_percent_pattern = re.search(
+        r"%(?:-)?Subscriber Growth per Period.*?"
+        r"Day:\s*([^\n]+).*?"
+        r"Week:\s*([^\n]+).*?"
+        r"Month:\s*([^\n]+)",
+        markdown_text,
+        re.DOTALL
+    )
+    if growth_percent_pattern:
+        day_val, week_val, month_val = growth_percent_pattern.groups()
+        # Clean up extra spaces
+        day_val = re.sub(r"\s+", " ", day_val).strip()
+        week_val = re.sub(r"\s+", " ", week_val).strip()
+        month_val = re.sub(r"\s+", " ", month_val).strip()
+        extracted_data["Percent Growth"] = {
+            "Day": day_val,
+            "Week": week_val,
+            "Month": month_val
+        }
+    else:
+        extracted_data["Percent Growth"] = None
+
+    # Absolute Growth (e.g., "New Subscribers per Period")
+    absolute_growth_pattern = re.search(
+        r"New Subscribers per Period.*?"
+        r"Day:\s*([^\n]+).*?"
+        r"Week:\s*([^\n]+).*?"
+        r"Month:\s*([^\n]+)",
+        markdown_text,
+        re.DOTALL
+    )
+    if absolute_growth_pattern:
+        day_val, week_val, month_val = absolute_growth_pattern.groups()
+        day_val = re.sub(r"\s+", " ", day_val).strip()
+        week_val = re.sub(r"\s+", " ", week_val).strip()
+        month_val = re.sub(r"\s+", " ", month_val).strip()
+        extracted_data["Absolute Growth"] = {
+            "Day": day_val,
+            "Week": week_val,
+            "Month": month_val
+        }
+    else:
+        extracted_data["Absolute Growth"] = None
+
+    return extracted_data
+
+
+async def get_content_from_pages(page_links, data):
     # 2) Crawl each detail URL in parallel using arun_many()
     async with AsyncWebCrawler() as crawler:
         detail_results = await crawler.arun_many(
-            urls=links,
+            urls=page_links,
             config=CrawlerRunConfig(
+                magic=True,
+                simulate_user=True, 
+                override_navigator=True,
                 cache_mode=CacheMode.BYPASS,
-                extraction_strategy=JsonCssExtractionStrategy(page_schema)
             )
         )
 
@@ -155,38 +123,48 @@ async def extract_data():
     for item, result in zip(data, detail_results):
         if result.success:
             # Convert extracted JSON from the detail page into Python
-            page_data = json.loads(result.extracted_content)
+            try:
+                page_data = parse_markdown(result.markdown)
+                if result.links.get('external'):
+                    page_data['subreddit_link'] = result.links['external'][0]['href']
+                # Attach it so we can pick relevant fields
+                item['page_content'] = page_data
+
+                # Build the data_dict from the detail data
+                data_dict = {
+                    'description': item.get('short_description', ""),
+                    "subredditName": item.get("link_name", ""),
+                    "subscribers": page_data.get("Subscribers", ""),
+                    "createdDate": page_data.get("Created", ""),
+                    "ranking": page_data.get("Ranking", ""),
+                    "growthDay": page_data.get("Percent Growth", "").get('Day', ''),
+                    "growthWeek": page_data.get("Percent Growth", "").get('Week', ''),
+                    "growthMonth": page_data.get("Percent Growth", "").get('Month', ''),
+                    "growthAbsoluteDay": page_data.get("Absolute Growth", "").get('Day', ''),
+                    "growthAbsoluteWeek": page_data.get("Absolute Growth", "").get('Week', ''),
+                    "growthAbsoluteMonth": page_data.get("Absolute Growth", "").get('Month', ''),
+                    "subreddit_link": page_data.get("subreddit_link", "")
+                }
+                all_records.append(data_dict)
+            except Exception as e:
+                print(f"Error while parsing data to json: {e}")
             # Optionally, add the first external link if you want it
-            if result.links.get('external'):
-                page_data.append({'subreddit_link': result.links['external'][0]['href']})
         else:
             print(f"Failed to crawl {result.url}: {result.error_message}")
             page_data = [{} for _ in range(7)]  # Make sure we have enough placeholders
 
-        # Attach it so we can pick relevant fields
-        item['page_content'] = page_data
+    return all_records
 
-        # Build the data_dict from the detail data
-        data_dict = {
-            'description': item.get('short_description', ""),
-            "subredditName": page_data[0].get("subredditName", ""),
-            "subscribers": page_data[1].get("subscribers", ""),
-            "createdDate": page_data[2].get("createdDate", ""),
-            "ranking": page_data[3].get("ranking", ""),
-            "growthDay": page_data[4].get("growthDay", ""),
-            "growthWeek": page_data[4].get("growthWeek", ""),
-            "growthMonth": page_data[4].get("growthMonth", ""),
-            "growthAbsoluteDay": page_data[5].get("growthAbsoluteDay", ""),
-            "growthAbsoluteWeek": page_data[5].get("growthAbsoluteWeek", ""),
-            "growthAbsoluteMonth": page_data[5].get("growthAbsoluteMonth", ""),
-            "subreddit_link": page_data[6].get("subreddit_link", "")
-        }
-        all_records.append(data_dict)
+async def scrape_data(base_url:str):
 
-    # 4) Create a pandas DataFrame
+    data, links = await get_pages_from_url(base_url)
+    
+    all_records = await get_content_from_pages(links, data)
+
     df = pd.DataFrame(all_records)
     df.to_csv('./results.csv', index=False)
     print("Scraping completed. Results saved to results.csv")
 
 if __name__ == "__main__":
-    asyncio.run(extract_data())
+    base_url = BASE_QUERY + COMMUNITY_RANGE[1]
+    asyncio.run(scrape_data(base_url))

@@ -33,74 +33,60 @@ basepage_schema = {
     }
 
 page_schema = {
-  "name": "Page Component Extraction",
-  "baseSelector": "div.bg-gray-100.border.border-gray-200.shadow-lg.rounded-2xl",
-  "fields": [
-    {
-      "name": "subredditName",
-      "selector": "div.w-full.flex-none.text-xl.text-gray-600.font-bold.leading-none",
-      "type": "text"
-    },
-    {
-      "name": "subscribers",
-      "selector": "div.text-lg.lg\\:text-2xl.text-gray-500.font-semibold.leading-8.mt-5",
-      "type": "text",
-      "index": 0
-    },
-    {
-      "name": "createdDate",
-      "selector": "div.text-lg.lg\\:text-2xl.text-gray-500.font-semibold.leading-8.mt-5",
-      "type": "text",
-      "index": 1
-    },
-    {
-      "name": "ranking",
-      "selector": "div.text-lg.lg\\:text-2xl.text-gray-500.font-semibold.leading-8.mt-5",
-      "type": "text",
-      "index": 2
-    },
-    {
-      "name": "subredditLink",
-      "selector": "a[href*='reddit.com/r/']",
-      "type": "attribute",
-      "attrName": "href"
-    },
-    {
-      "name": "growthDay",
-      "selector": "div.h-64:nth-of-type(1) p:nth-of-type(1)",
-      "type": "text"
-    },
-    {
-      "name": "growthWeek",
-      "selector": "div.h-64:nth-of-type(1) p:nth-of-type(2)",
-      "type": "text"
-    },
-    {
-      "name": "growthMonth",
-      "selector": "div.h-64:nth-of-type(1) p:nth-of-type(3)",
-      "type": "text"
-    },
-    {
-      "name": "growthAbsoluteDay",
-      "selector": "div.h-64:nth-of-type(2) p:nth-of-type(1)",
-      "type": "text"
-    },
-    {
-      "name": "growthAbsoluteWeek",
-      "selector": "div.h-64:nth-of-type(2) p:nth-of-type(2)",
-      "type": "text"
-    },
-    {
-      "name": "growthAbsoluteMonth",
-      "selector": "div.h-64:nth-of-type(2) p:nth-of-type(3)",
-      "type": "text"
-    }
-  ]
+    "name": "Page Component Extraction",
+    "baseSelector": "div.container.m-4",
+    "fields": [
+        {
+            "name": "components",
+            "selector": "div.p-4.relative.bg-gray-100.border.border-gray-200.shadow-lg.rounded-2xl",
+            "type": "list",
+            "fields": [
+                {
+                    "name": "value",
+                    "selector": "div.text-lg.lg\\:text-2xl.text-gray-500.font-semibold.leading-8.mt-5",
+                    "type": "text"
+                },
+                {
+                    "name": "created_label",
+                    "selector": "span",
+                    "type": "text"
+                }
+            ]
+        },
+        {
+            "name": "subscriber_growth",
+            "selector": "div.h-64.p-4.relative.bg-gray-100.border.border-gray-200.shadow-lg.rounded-2xl",
+            "type": "list",
+            "fields": [
+                {
+                    "name": "period",
+                    "selector": "h2.flex.justify-between.items-center.font-thin.uppercase.text-gray-400",
+                    "type": "text"
+                },
+                {
+                    "name": "day_growth",
+                    "selector": "p:nth-of-type(1)::text",
+                    "type": "text"
+                },
+                {
+                    "name": "week_growth",
+                    "selector": "p:nth-of-type(2)::text",
+                    "type": "text"
+                },
+                {
+                    "name": "month_growth",
+                    "selector": "p:nth-of-type(3)::text",
+                    "type": "text"
+                }
+            ]
+        }
+    ]
 }
+
 
 async def extract_page_components(url):
     async with AsyncWebCrawler() as crawler:
-        result = await crawler.arun(
+        result = await crawler.arun_many(
             url=url,
             config=CrawlerRunConfig(
                 cache_mode=CacheMode.BYPASS,
