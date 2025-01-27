@@ -6,8 +6,12 @@ import pandas as pd
 from crawl4ai import AsyncWebCrawler, CacheMode, CrawlerRunConfig
 from crawl4ai.async_configs import CrawlerRunConfig
 from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
+import os
 
 from consts import (BASE_DOMAIN, BASE_QUERY, COMMUNITY_RANGE, basepage_schema)
+
+# Change the current working directory to the script's directory
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 
 async def get_pages_from_url(url:str):
@@ -162,9 +166,15 @@ async def scrape_data(base_url:str):
     all_records = await get_content_from_pages(links, data)
 
     df = pd.DataFrame(all_records)
-    df.to_csv('./results.csv', index=False)
+    df.to_csv('./data/results_1000001_100000000.csv', index=False)
     print("Scraping completed. Results saved to results.csv")
 
 if __name__ == "__main__":
-    base_url = BASE_QUERY + COMMUNITY_RANGE[1]
-    asyncio.run(scrape_data(base_url))
+    for c_range in COMMUNITY_RANGE:
+        base_url = BASE_QUERY + c_range
+        filename = f"{c_range.replace('-', '_')}.csv"
+        filename = '_'.join(['results', filename])
+        if os.path.exists(os.path.join('data',filename)):
+            continue
+        base_url = BASE_QUERY + c_range
+        asyncio.run(scrape_data(base_url, filename))
