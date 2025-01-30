@@ -4,6 +4,7 @@ import pandas as pd
 import os
 from tqdm.auto import tqdm
 
+
 # Change the current working directory to the script's directory
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -24,8 +25,7 @@ class EmbeddingTemplate:
             growth_absolute_month:str,
             ):
 
-        self.prompt = f"""
-        <|start|>Information about subreddit:
+        self.prompt = f"""<|start|>Information about subreddit:
         <|short description|>{short_description if short_description else 'None'}
         <|subreddit_name|>{subreddit_name if subreddit_name else 'None'}
         <|subscribers|>{subscribers if subscribers else 'None'}
@@ -79,6 +79,10 @@ def calculate_embeddings(df:pd.DataFrame):
     return df
  
 if __name__ == "__main__":
-    df = pd.read_csv("./data/results_50001_100000.csv")
-    df.reset_index(drop=True, inplace=True)
-    embeds_df = calculate_embeddings(df)
+    files_to_process = sorted(os.listdir('./data'))
+    for file in files_to_process:
+        df = pd.read_csv(os.path.join('./data', f"{file}"))
+        df.reset_index(drop=True, inplace=True)
+        embeds_df = calculate_embeddings(df)
+        embeds_df.to_csv(os.path.join('./data', f'{file.split('.')[0]}_w_embeds.csv'), index=False)
+
