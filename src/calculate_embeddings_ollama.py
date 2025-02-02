@@ -1,9 +1,8 @@
-from langchain_ollama.embeddings import OllamaEmbeddings
-import numpy as np
-import pandas as pd
 import os
-from tqdm.auto import tqdm
 
+import pandas as pd
+from langchain_ollama.embeddings import OllamaEmbeddings
+from tqdm.auto import tqdm
 
 # Change the current working directory to the script's directory
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -39,7 +38,7 @@ class EmbeddingTemplate:
         <|growth_absolute_month|>{growth_absolute_month if growth_absolute_month else 'None'}
         <|end|>"""
 
-def calculate_embeddings(df:pd.DataFrame):
+def calculate_embeddings_ollama(df:pd.DataFrame):
     """calculate the embeddings using lanchain-ollama"""
 
     embed_model = OllamaEmbeddings(model='llama3.2:3b')
@@ -77,12 +76,10 @@ def calculate_embeddings(df:pd.DataFrame):
         df.loc[idx, 'embs'] = str(embed_model.embed_query(embedding_template.prompt))
 
     return df
- 
-if __name__ == "__main__":
-    files_to_process = sorted(os.listdir('./data'))
-    for file in files_to_process:
-        df = pd.read_csv(os.path.join('./data', f"{file}"))
-        df.reset_index(drop=True, inplace=True)
-        embeds_df = calculate_embeddings(df)
-        embeds_df.to_csv(os.path.join('./data', f'{file.split('.')[0]}_w_embeds.csv'), index=False)
 
+
+if __name__ == "__main__":
+    df = pd.read_csv('./data/df_processed_all.csv')
+    df.reset_index(drop=True, inplace=True)
+    embeds_df = calculate_embeddings_ollama(df)
+    print("All Done!")
