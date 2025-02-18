@@ -6,9 +6,6 @@ class RedditPost(BaseModel):
     subreddit_id: str
     subreddit_display_name: str
     subreddit_subscribers: Optional[int] = None
-    subreddit_type: Optional[str] = None
-    subreddit_lang: Optional[str] = None
-    subreddit_description: Optional[str] = None
     post_id: str
     title: str
     author: Optional[str] = None  # Handle deleted users
@@ -29,13 +26,11 @@ class RedditComment(BaseModel):
     comment_id: str
     parent_id: str  # Tracks comment hierarchy
     link_id: Optional[str] = None  # The Reddit post this comment belongs to
-    subreddit: str
+    subreddit_id: str
     author_fullname: Optional[str] = None
     author_premium: Optional[bool] = None
     created_utc: float  # Timestamp of comment
     score: int  # Total engagement score (upvotes - downvotes)
-    ups: int  # Upvotes only
-    downs: int  # Downvotes only
     num_reports: Optional[int]  # Reports (can indicate controversial topics)
     gilded: int  # If it received awards (signal for high-quality comments)
     body: str  # Actual comment text
