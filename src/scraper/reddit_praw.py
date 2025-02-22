@@ -1,6 +1,9 @@
+import enum
 import json
 import random
 import time
+from functools import partial
+from typing import List
 
 import pandas as pd
 import praw
@@ -9,15 +12,16 @@ from tqdm.auto import tqdm
 
 random.seed(42)
 
+import datetime
+
 from src.data.validators import RedditComment, RedditPost
 
-MAX_POSTS = 10
-MIN_POSTS = 2
-MIN_COMMENTS = 5
-MAX_COMMENTS = 10
+MAX_POSTS = 50
+MIN_POSTS = 20
+MIN_COMMENTS = 2
+MAX_COMMENTS = 5
 MAX_RETRIES = 5
-
-POST_TYPES = ['hot', 'new', 'controversial', 'top']
+MAX_DEPTH = 2
 
 
 # Track API rate limits
@@ -34,19 +38,22 @@ def check_rate_limit(reddit, lower_bound:int=25):
 
 
 # Function to fetch posts with rate limit handling
-def fetch_data(subreddit_name, reddit_instance):
+def fetch_data(subreddit_name, reddit_instance, weights:List[int]=[0.3, 0.3, 0.2, 0.2]):
     """Fetch posts from a subreddit with rate limit handling."""
     
     retries = 0
-    data = []
+    posts = []
+    comments = []
 
     while retries < MAX_RETRIES:
         try:
             subreddit = reddit_instance.subreddit(subreddit_name)
             n_posts = random.randint(MIN_POSTS, MAX_POSTS)
-            post_kinds = [subreddit.top, subreddit.new, subreddit.controversial, subreddit.hot]
+            controversil_w_filter = partial(subreddit.controversial, time_filter='year')
+            top_w_filter = partial(subreddit.top, time_filter='year')
+            post_kinds = [subreddit.hot, subreddit.new, controversil_w_filter, top_w_filter]
             
-            for post in random.choice(post_kinds)(limit=n_posts):
+            for post in random.choices(post_kinds, weights=weights)[0](limit=n_posts):
                 check_rate_limit(reddit_instance)
                 reddit_post = RedditPost(
                     element_type="post",
@@ -66,32 +73,32 @@ def fetch_data(subreddit_name, reddit_instance):
                     permalink=post.permalink,
                     upvote_ratio=post.upvote_ratio
                 )
-                data.append(reddit_post.__dict__)
+                posts.append(reddit_post.__dict__)
                 if post.num_comments > 0:
                     # Scraping comments for each post
                     more_comments = random.randint(MIN_COMMENTS, MAX_COMMENTS)
                     post.comments.replace_more(limit=more_comments)
                     for comment in post.comments.list(): # list() returns list of comments visited in BFS order
+                        if comment.depth > MAX_DEPTH:
+                            print("Max depth reached! Changing post!")
+                            break
                         check_rate_limit(reddit_instance)
                         reddit_comment = RedditComment(
                             element_type = 'comment',
                             comment_id = comment.id,
-                            author_full_name = comment.author_fullname if hasattr(comment, "author_fullname") else None,
+                            parent_id = comment.parent_id if hasattr(comment, 'parent_id') else None,
+                            subreddit_id = comment.subreddit_id,
                             author_premium = comment.author_premium if hasattr(comment, "author_fullname") else None,
                             created_utc = comment.created_utc,
-                            subreddit_id = comment.subreddit_id,
-                            num_reports=comment.num_reports,
                             score = comment.score,
                             gilded = comment.gilded,
                             body = comment.body,
                             edited = comment.edited,
-                            permalink = comment.permalink,
                             depth = comment.depth,
                             controversiality=comment.controversiality,
-                            parent_id = comment.parent_id if hasattr(comment, 'parent_id') else None
                         )
-                        data.append(reddit_comment.__dict__)
-            return data
+                        comments.append(reddit_comment.__dict__)
+            return posts, comments
         except Exception as e:
             if "RATELIMIT" in str(e) or "429" in str(e): # TODO: catch better the exception with proper handling.
                 print(f"🚨 API Rate Limit hit! Checking Reddit's reset time...")
@@ -102,7 +109,7 @@ def fetch_data(subreddit_name, reddit_instance):
                 break  # Exit on non-rate-limit errors
 
     print("❌ Max retries reached. Skipping subreddit:", subreddit_name)
-    return data  # Return whatever has been scraped
+    return posts, comments  # Return whatever has been scraped
 
 if __name__ == '__main__':
 
@@ -129,19 +136,23 @@ if __name__ == '__main__':
 
     assert reddit_instance.user.me() == config['username'], 'Reddit instance not authenticated!'
 
-    subreddit_data = []
+    subreddit_posts = []
+    subreddit_comments = []
     # Scraping process
-    subreddit_loop = tqdm(flattened_subreddits, total=len(flattened_subreddits))
-    
+    subreddit_loop = tqdm(flattened_subreddits[:5], total=len(flattened_subreddits[5]))
     for subreddit_name in subreddit_loop:
         subreddit_loop.set_description(f"Scraping: {subreddit_name}")
         check_rate_limit(reddit_instance)
 
         # Fetch posts
-        data = fetch_data(subreddit_name, reddit_instance)
-        subreddit_data.extend(data)
+        posts, comments = fetch_data(subreddit_name, reddit_instance)
+        subreddit_posts.extend(posts)
+        subreddit_comments.extend(comments)
 
     # Create pandas DataFrame
-    subreddit_df = pd.DataFrame(subreddit_data)
-    subreddit_df.to_csv('./data.csv', index=False)
+    posts_df = pd.DataFrame(subreddit_posts)
+    comments_df = pd.DataFrame(subreddit_comments)
+    timestamp = datetime.datetime.now().strftime("%d_%m_%Y_%H_%M_%S")
+    posts_df.to_csv(f'./posts_{timestamp}.csv', index=False)
+    comments_df.to_csv(f'./comments_{timestamp}.csv', index=False)
     print("✅ All done!")
