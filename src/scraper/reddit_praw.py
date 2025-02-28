@@ -1,4 +1,3 @@
-import enum
 import json
 import random
 import time
@@ -13,8 +12,13 @@ from tqdm.auto import tqdm
 random.seed(42)
 
 import datetime
+import os
 
 from src.data.validators import RedditComment, RedditPost
+
+# Change the current working directory to the script's directory
+# Get the directory of the current script
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
 MAX_POSTS = 50
 MIN_POSTS = 20
@@ -80,7 +84,6 @@ def fetch_data(subreddit_name, reddit_instance, weights:List[int]=[0.3, 0.3, 0.2
                     post.comments.replace_more(limit=more_comments)
                     for comment in post.comments.list(): # list() returns list of comments visited in BFS order
                         if comment.depth > MAX_DEPTH:
-                            print("Max depth reached! Changing post!")
                             break
                         check_rate_limit(reddit_instance)
                         reddit_comment = RedditComment(
@@ -114,7 +117,8 @@ def fetch_data(subreddit_name, reddit_instance, weights:List[int]=[0.3, 0.3, 0.2
 if __name__ == '__main__':
 
     # Load config for subreddits
-    with open('./src/configs/subreddits.yaml') as f:
+    config_path = os.path.join(script_dir, '../configs/subreddits.yaml')
+    with open(config_path) as f:
         subreddits = yaml.load(f, Loader=yaml.FullLoader)
 
     flattened_subreddits = [
@@ -122,7 +126,7 @@ if __name__ == '__main__':
     ]
 
     # Load Reddit API credentials
-    with open('./src/config.json') as f:
+    with open('../config.json') as f:
         config = json.load(f)
 
     reddit_instance = praw.Reddit(
@@ -139,7 +143,7 @@ if __name__ == '__main__':
     subreddit_posts = []
     subreddit_comments = []
     # Scraping process
-    subreddit_loop = tqdm(flattened_subreddits[:5], total=len(flattened_subreddits[5]))
+    subreddit_loop = tqdm(flattened_subreddits, total=len(flattened_subreddits))
     for subreddit_name in subreddit_loop:
         subreddit_loop.set_description(f"Scraping: {subreddit_name}")
         check_rate_limit(reddit_instance)
@@ -153,6 +157,6 @@ if __name__ == '__main__':
     posts_df = pd.DataFrame(subreddit_posts)
     comments_df = pd.DataFrame(subreddit_comments)
     timestamp = datetime.datetime.now().strftime("%d_%m_%Y_%H_%M_%S")
-    posts_df.to_csv(f'./posts_{timestamp}.csv', index=False)
-    comments_df.to_csv(f'./comments_{timestamp}.csv', index=False)
+    posts_df.to_csv(f'../data/dataframes/posts_{timestamp}.csv', index=False)
+    comments_df.to_csv(f'../data/dataframes/comments_{timestamp}.csv', index=False)
     print("✅ All done!")
